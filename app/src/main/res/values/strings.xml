@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">BorderFetcher</string>
+    <string name="action_settings">Settings</string>
+    <string name="action_clear">reset</string>
+</resources>
