@@ -1,6 +1,7 @@
 package com.iwxyi.borderfetcher;
 
 import android.annotation.SuppressLint;
+import android.content.Context;
 import android.content.Intent;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
@@ -17,7 +18,11 @@ import android.view.Menu;
 import android.view.MenuItem;
 import android.view.MotionEvent;
 import android.view.View;
+import android.view.ViewGroup;
+import android.view.WindowManager;
+import android.widget.AbsoluteLayout;
 import android.widget.ImageView;
+import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -47,7 +52,8 @@ public class MainActivity extends AppCompatActivity {
     private Bitmap originBitmap;           // 原图（好像没什么用了）
     private Bitmap compressBitmap;         // 压缩后的图片，也是主要使用的图片，拖拽操作就在它这里盘旋
     private int compressProportion = 1;    // 压缩比例
-    private int bitmapWidth, bitmapHeight; // 图片宽高（压缩后）
+    private int originWidth, originHeight; // 图片原来的的宽高（按比例显示放大镜）
+    private int bitmapWidth, bitmapHeight; // 图片压缩后的宽高（主要使用）
 
                                        // ==== 选择工具 ====
     private Bitmap resultBitmap;       // 结果图片（选中的地方标红）
@@ -60,6 +66,9 @@ public class MainActivity extends AppCompatActivity {
     private List<Point> queue = new ArrayList<>();        // 广度优先搜索的队列
     private Bitmap vis;                                   // 广度优先搜索的是否遍历过的flag矩阵
 
+    AbsoluteLayout absoluteLayout;  // 绝对布局，用来添加一个实时显示的放大镜（图片显示一部分的控件）
+    ImageView magnifying;           // 放大镜控件，手势按下时才会显示的控件，用来放大选区周围情况使之更加精确
+    AbsoluteLayout.LayoutParams lp; // 绝对布局移动参数，不知道为什么不能直接用 layout 函数来使 magnifying 随手指移动
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -91,26 +100,48 @@ public class MainActivity extends AppCompatActivity {
             @Override
             public boolean onTouch(View v, MotionEvent event) {
                 switch (event.getAction()) {
-                    case MotionEvent.ACTION_DOWN:
+                    case MotionEvent.ACTION_DOWN: // 手指按下事件
                         movePoints.clear();
                         moveColors.clear();
                         addMotionPoint(event);
+                        magnifying.setVisibility(View.VISIBLE);
+                        adjustMagnifying(event);
                         break;
-                    case MotionEvent.ACTION_UP:
+                    case MotionEvent.ACTION_UP:   // 手指弹起事件
                         if (isChoosing) { // 移动几个点，增加选择
                             startChoose();
                         } else {          // 移动几个点，删掉之前已经选中的点
                             startUnChoose();
                         }
+                        magnifying.setVisibility(View.GONE);
                         break;
-                    case MotionEvent.ACTION_MOVE:
+                    case MotionEvent.ACTION_MOVE: // 手指移动事件
                         addMotionPoint(event);
+                        adjustMagnifying(event);
                         break;
                 }
                 return true; // 设置为 false 的话，则不会响应 move 和 up 事件
             }
         });
         mInfoTv = (TextView) findViewById(R.id.tv_info);
+        absoluteLayout = (AbsoluteLayout) findViewById(R.id.abs_layout);
+
+        magnifying = new ImageView(this);
+        WindowManager wm = (WindowManager) this
+                .getSystemService(Context.WINDOW_SERVICE);
+        int width = wm.getDefaultDisplay().getWidth();
+        int height = wm.getDefaultDisplay().getHeight();
+        //lp = new AbsoluteLayout.LayoutParams(width/3, height/3, 0,100);
+        lp = new AbsoluteLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, 0,0);
+        absoluteLayout.addView(magnifying, lp);
+        magnifying.setVisibility(View.GONE);
+
+        /*lp.height = 100;
+        lp.width = 100;
+        lp.x = 300;
+        lp.y = 200;
+        magnifying.setLayoutParams(lp);*/
+
     }
 
     /**
@@ -189,7 +220,7 @@ public class MainActivity extends AppCompatActivity {
     @Override
     public void onActivityResult(int requestCode, int resultCode, Intent data) {
         if (data == null) return;
-        if (requestCode == PHOTOZOOM) {
+        if (requestCode == PHOTOZOOM) { // 选择图片完毕
             // ==== 压缩图片 ====
             // startPhotoCrop(data.getData()); // 不用裁剪
             Uri originalUrl = data.getData();
@@ -202,6 +233,7 @@ public class MainActivity extends AppCompatActivity {
             compressProportion = CompressBitmapUtil.getProportion(); // 压缩比例
             bitmapWidth = CompressBitmapUtil.getPWidth();            // 压缩后的图片宽度
             bitmapHeight = CompressBitmapUtil.getPHeight();          // 压缩后的图片高度
+            magnifying.setImageBitmap(originBitmap);                 // 放大镜设置为原图（大小也是原图？）
 
             // ==== 设置图片选中状态 ====
             choosedBitmap = Bitmap.createBitmap(bitmapWidth, bitmapHeight, Bitmap.Config.ARGB_8888);
@@ -232,6 +264,12 @@ public class MainActivity extends AppCompatActivity {
                 bitmap.setPixel(i, j, average);
             }
         return bitmap;
+    }
+
+    private void adjustMagnifying(MotionEvent event) {
+        int x = (int) event.getX(), y = (int) event.getY();
+        if (x < 0 || x >= bitmapWidth || y < 0 || y >= bitmapHeight) return ;
+
     }
 
     /**
