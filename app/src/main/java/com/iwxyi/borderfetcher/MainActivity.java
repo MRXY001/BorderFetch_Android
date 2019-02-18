@@ -7,6 +7,7 @@ import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.Color;
 import android.graphics.Point;
+import android.graphics.Rect;
 import android.net.Uri;
 import android.os.Bundle;
 import android.provider.MediaStore;
@@ -22,13 +23,11 @@ import android.view.ViewGroup;
 import android.view.WindowManager;
 import android.widget.AbsoluteLayout;
 import android.widget.ImageView;
-import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Queue;
 
 public class MainActivity extends AppCompatActivity {
 
@@ -54,7 +53,6 @@ public class MainActivity extends AppCompatActivity {
     private int compressProportion = 1;    // 压缩比例
     private int originWidth, originHeight; // 图片原来的的宽高（按比例显示放大镜）
     private int bitmapWidth, bitmapHeight; // 图片压缩后的宽高（主要使用）
-
                                        // ==== 选择工具 ====
     private Bitmap resultBitmap;       // 结果图片（选中的地方标红）
     private Bitmap grayBitmap;         // 黑白图（暂时用不到）。如果使用，转换后需要执行 compressBitmap = grayBitmap
@@ -68,7 +66,11 @@ public class MainActivity extends AppCompatActivity {
 
     AbsoluteLayout absoluteLayout;  // 绝对布局，用来添加一个实时显示的放大镜（图片显示一部分的控件）
     ImageView magnifying;           // 放大镜控件，手势按下时才会显示的控件，用来放大选区周围情况使之更加精确
-    AbsoluteLayout.LayoutParams lp; // 绝对布局移动参数，不知道为什么不能直接用 layout 函数来使 magnifying 随手指移动
+    ImageView retical;              // 放大镜准星
+    AbsoluteLayout.LayoutParams lp1; // 绝对布局移动参数，不知道为什么不能直接用 layout 函数来使 magnifying 随手指移动
+    AbsoluteLayout.LayoutParams lp2; // 准星的参数
+    int magnifyDelta;                // 放大镜显示的区域与手指的距离
+    int magnifyDiameter;             // 放大镜显示的区域直径
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -105,6 +107,7 @@ public class MainActivity extends AppCompatActivity {
                         moveColors.clear();
                         addMotionPoint(event);
                         magnifying.setVisibility(View.VISIBLE);
+                        retical.setVisibility(View.VISIBLE);
                         adjustMagnifying(event);
                         break;
                     case MotionEvent.ACTION_UP:   // 手指弹起事件
@@ -114,6 +117,7 @@ public class MainActivity extends AppCompatActivity {
                             startUnChoose();
                         }
                         magnifying.setVisibility(View.GONE);
+                        retical.setVisibility(View.GONE);
                         break;
                     case MotionEvent.ACTION_MOVE: // 手指移动事件
                         addMotionPoint(event);
@@ -127,21 +131,20 @@ public class MainActivity extends AppCompatActivity {
         absoluteLayout = (AbsoluteLayout) findViewById(R.id.abs_layout);
 
         magnifying = new ImageView(this);
-        WindowManager wm = (WindowManager) this
-                .getSystemService(Context.WINDOW_SERVICE);
-        int width = wm.getDefaultDisplay().getWidth();
-        int height = wm.getDefaultDisplay().getHeight();
-        //lp = new AbsoluteLayout.LayoutParams(width/3, height/3, 0,100);
-        lp = new AbsoluteLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, 0,0);
-        absoluteLayout.addView(magnifying, lp);
+        lp1 = new AbsoluteLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, 0,0);
+        absoluteLayout.addView(magnifying, lp1);
         magnifying.setVisibility(View.GONE);
 
-        /*lp.height = 100;
-        lp.width = 100;
-        lp.x = 300;
-        lp.y = 200;
-        magnifying.setLayoutParams(lp);*/
-
+        retical = new ImageView(this);
+        WindowManager wm = (WindowManager) this.getSystemService(Context.WINDOW_SERVICE);
+        int width = wm.getDefaultDisplay().getWidth();
+        int height = wm.getDefaultDisplay().getHeight();
+        lp2 = new AbsoluteLayout.LayoutParams(width/16, height/16, 0,0);
+        absoluteLayout.addView(retical, lp2);
+        retical.setVisibility(View.GONE);
+        retical.setBackground(getResources().getDrawable(R.drawable.ten));
+        magnifyDelta = height / 10;
+        magnifyDiameter = width / 2;
     }
 
     /**
@@ -226,7 +229,9 @@ public class MainActivity extends AppCompatActivity {
             Uri originalUrl = data.getData();
             BitmapFactory.Options options = new BitmapFactory.Options();
             options.inJustDecodeBounds = false;
-            originBitmap = CompressBitmapUtil.decodeBitmap(getApplicationContext(), originalUrl, options);
+            originBitmap = CompressBitmapUtil.decodeBitmap(getApplicationContext(), originalUrl, options); // 这是原图
+            originWidth = originBitmap.getWidth();
+            originHeight = originBitmap.getHeight();
             compressBitmap = CompressBitmapUtil.compressBitmap(getApplicationContext(), originalUrl, 300, 300);
 
             mPhotoIv.setImageBitmap(compressBitmap);                 // 设置ImageView为 压缩后的图片
@@ -270,6 +275,25 @@ public class MainActivity extends AppCompatActivity {
         int x = (int) event.getX(), y = (int) event.getY();
         if (x < 0 || x >= bitmapWidth || y < 0 || y >= bitmapHeight) return ;
 
+        // 裁剪一部分区域
+        int clipLeft = x * compressProportion - magnifyDiameter / 2;
+        int clipTop = y * compressProportion - magnifyDiameter / 2;
+        Rect rect = new Rect(clipLeft, clipTop, clipLeft+magnifyDiameter, clipTop+magnifyDiameter);
+        magnifying.setClipBounds(rect);
+
+        // 移动图片
+        int left1 = x + mPhotoIv.getLeft() - clipLeft - magnifyDiameter / 2;
+        int top1 = y + mPhotoIv.getTop() - clipTop - magnifyDiameter / 2 - magnifyDelta;
+        lp1.x = left1;
+        lp1.y = top1;
+        magnifying.setLayoutParams(lp1);
+
+        // 移动准星
+        int left2 = x - retical.getWidth()/2; // 针对压缩后的图片的坐标
+        int top2 = y - magnifyDelta - retical.getHeight()/2;
+        lp2.x = left2+mPhotoIv.getLeft();
+        lp2.y = top2+mPhotoIv.getTop();
+        retical.setLayoutParams(lp2);
     }
 
     /**
